@@ -1,0 +1,10 @@
+node_modules/
+dist/
+lambda.zip
+cdk.out/
+*.log
+.DS_Store
+coverage/
+.env
+.env.local
+*.tsbuildinfo

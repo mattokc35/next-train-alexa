@@ -1,0 +1,32 @@
+{
+  "manifest": {
+    "publishingInformation": {
+      "locales": {
+        "en-US": {
+          "name": "Next Train",
+          "summary": "Get real-time next-train arrivals and delay/detour status for PATH trains.",
+          "description": "Next Train tells you when your next PATH train is arriving, and whether there are any delays or service alerts you should plan around. Ask for any supported PATH station and line, such as Grove Street, 33rd Street, Hoboken, or World Trade Center.",
+          "examplePhrases": [
+            "Alexa, ask Next Train when's my next train at Grove Street",
+            "Alexa, ask Next Train if there are any delays on the Hoboken line",
+            "Alexa, open Next Train"
+          ],
+          "keywords": ["train", "PATH", "transit", "commute"]
+        }
+      },
+      "isAvailableWorldwide": false,
+      "testingInstructions": "Ask about the default stations: PATH Grove Street and PATH 33rd Street.",
+      "category": "TRANSPORTATION",
+      "distributionCountries": ["US"]
+    },
+    "apis": {
+      "custom": {
+        "endpoint": {
+          "sourceDir": "../"
+        },
+        "interfaces": []
+      }
+    },
+    "manifestVersion": "1.0"
+  }
+}
