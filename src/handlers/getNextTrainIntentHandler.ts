@@ -32,7 +32,7 @@ export function createGetNextTrainIntentHandler(router: TransitRouter): RequestH
         const result = await router.getNextArrivals(stationSlot, lineSlot);
         if (!result) {
           const speakOutput = stationSlot
-            ? `Sorry, I don't recognize the station "${stationSlot}". Try asking about Grove Street or 9th Street.`
+            ? `Sorry, I don't recognize the station "${stationSlot}". Try asking about Grove Street or 33rd Street.`
             : "Sorry, I couldn't figure out which station you meant.";
           return handlerInput.responseBuilder
             .speak(speakOutput)

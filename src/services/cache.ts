@@ -1,7 +1,7 @@
 /**
- * A minimal in-memory TTL cache used to avoid hammering the PATH and MTA
- * upstream APIs on every Alexa request. Not shared across Lambda invocations
- * unless the execution environment is reused (a warm container), which is
+ * A minimal in-memory TTL cache used to avoid hammering the upstream PATH
+ * API on every Alexa request. Not shared across Lambda invocations unless
+ * the execution environment is reused (a warm container), which is
  * sufficient to smooth out bursts of requests within a short window.
  */
 export class TtlCache<V> {

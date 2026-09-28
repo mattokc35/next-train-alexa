@@ -1,52 +1,73 @@
 # Next Train — Alexa Skill
 
 A custom Alexa skill that answers "when's my next train" and "are there any
-delays or should I detour" for **PATH** (NJ Transit / PANYNJ) and **MTA
-subway** riders. Built to be general-purpose across any PATH station or MTA
-line/station; ships with four default stations for testing and as the basis
-for the interaction model samples:
+delays or should I detour" for **PATH** (Port Authority Trans-Hudson) riders.
+Built to be general-purpose across any PATH station/line; ships with two
+default stations used for testing and as the basis for the interaction model
+samples:
 
-- PATH: Grove Street, 33rd Street
-- MTA: 9th Street (A/C/E), World Trade Center (1/2/3)
+- Grove Street
+- 33rd Street
 
 ## Architecture
 
 ```
 Alexa → Lambda (ask-sdk-core handlers) → TransitRouter → StationRegistry
-                                              ├─ PathService  (path.api.razza.dev, REST/JSON)
-                                              └─ MtaService   (api.mta.info, GTFS-realtime protobuf)
+                                              └─ PathService (official ridepath.json feed,
+                                                              scraped via headless Chromium)
 ```
 
 - **Handlers** (`src/handlers/`): `LaunchRequestHandler`, `GetNextTrainIntentHandler`,
   `GetDelayStatusIntentHandler`, plus built-in Help/Cancel/Stop/Fallback/SessionEnded
   and a generic error handler. Intent handlers are factory functions that take a
   `TransitRouter`, so they're unit-testable without a live Lambda.
-- **Services** (`src/services/`): `TransitService` is the common interface both
-  adapters implement, normalizing into a shared `TrainArrival` type. A small
-  `TtlCache` (default 30s) sits in front of each adapter's upstream call to
-  avoid hitting rate limits when Alexa retries or a container stays warm.
+- **Services** (`src/services/`): `TransitService` is the common interface a
+  provider adapter implements, normalizing into a shared `TrainArrival` type.
+  The interface (and the `TransitProvider` union) is intentionally kept
+  general so another provider could be added later without touching the
+  router or handlers. `PathService` is the only implementation today, backed
+  by the official PATH `ridepath.json` feed. A `TtlCache` (30s) sits in front
+  of it, since each "fetch" launches (or reuses) a real headless Chromium
+  instance — see the caveat below.
 - **Data** (`src/data/stationRegistry.ts`): maps spoken station/line names to
-  provider-specific IDs. Extend `DEFAULT_STATIONS` to add more PATH stations
-  or MTA lines/stations — no other code needs to change.
-- **Infra** (`infra/`): AWS CDK (TypeScript) stack defining the Lambda function,
-  a scoped IAM policy for reading the MTA API key from SSM, and the
-  resource policy that lets the Alexa Skills Kit invoke the function.
+  PATH's official station codes and to the destination "headsigns" that
+  identify a line in the feed. Extend `DEFAULT_STATIONS` to add more PATH
+  stations — no other code needs to change.
+- **Infra** (`infra/`): AWS CDK (TypeScript) stack defining the Lambda
+  function (bundled with `puppeteer-core` + `@sparticuz/chromium`) and the
+  resource policy that lets the Alexa Skills Kit invoke it.
 
-### Data sources — important caveats
+### Data source & Akamai bot-check caveat
 
-- **PATH**: There is no official, stable public real-time API for PATH. This
-  scaffold uses the community-run `https://path.api.razza.dev` API. Its
-  station IDs and response schema (in `src/services/pathService.ts` /
-  `src/data/stationRegistry.ts`) were captured from public documentation but
-  **could not be verified against the live endpoint in this environment**
-  (no outbound network access during scaffolding). Before deploying, hit the
-  live API directly and adjust `PathUpcomingTrain`/station IDs if the schema
-  has drifted.
-- **MTA**: Uses the official GTFS-realtime protobuf feeds from
-  `api.mta.info`. Requires a free API key (see below). Feed URLs are grouped
-  by line family (`ace`, `bdfm`, `g`, `jz`, `nqrw`, `l`, `123456s`, `sir`) —
-  see `FEED_PATHS` in `src/services/mtaService.ts`. Verify these paths against
-  the current MTA developer docs, as the MTA has changed feed hosting before.
+PATH does not publish a stable, documented public real-time API. This skill
+scrapes the **official** Port Authority endpoint:
+
+```
+https://www.panynj.gov/bin/portauthority/ridepath.json
+```
+
+That endpoint sits behind an **Akamai bot-check** that returns an empty `200`
+response to plain HTTP clients — `curl`, `fetch`, `node-fetch`, etc. all get
+nothing back. It only serves the real JSON to a client that behaves like a
+real browser (realistic Chrome user agent, viewport, and waiting for the page
+to settle). To work around this, `src/services/pathService.ts` launches a
+headless Chromium instance (`puppeteer-core` + `@sparticuz/chromium`, the
+Lambda-compatible Chromium build — **not** plain `puppeteer`, which bundles a
+full Chrome download that's far too large for Lambda), navigates to the
+endpoint, and reads `document.body.innerText` before parsing it as JSON.
+
+**This is inherently fragile.** Port Authority/Akamai could change this
+behavior at any time without notice — tightening the bot-check, requiring a
+different navigation pattern, or blocking headless browsers outright. If
+`scrapeRidePathJson()` starts throwing "Failed to parse... as JSON" errors in
+production, check whether the page content changed (it likely returned a
+challenge page instead of the feed) before assuming a code bug.
+
+Launching a browser is expensive (multiple seconds), so:
+
+- Responses are cached for 30 seconds (`DEFAULT_CACHE_TTL_MS` in `pathService.ts`).
+- The Chromium `Browser` instance itself is kept in a module-level singleton
+  and reused across warm Lambda invocations, not relaunched per request.
 
 ## Project layout
 
@@ -54,7 +75,7 @@ Alexa → Lambda (ask-sdk-core handlers) → TransitRouter → StationRegistry
 src/
   lambda/index.ts              # Lambda entrypoint (ask-sdk-core SkillBuilder)
   handlers/                    # Intent + lifecycle handlers
-  services/                    # TransitService interface, PathService, MtaService,
+  services/                    # TransitService interface, PathService,
                                 # TransitRouter, TtlCache, response formatting
   data/stationRegistry.ts      # Station/line directory + fuzzy name matching
   __tests__/                   # Jest unit tests
@@ -73,8 +94,9 @@ infra/
 - The [ASK CLI](https://developer.amazon.com/en-US/docs/alexa/smapi/quick-start-alexa-skills-kit-command-line-interface.html) (`npm install -g ask-cli`)
 - An AWS account with credentials configured (`aws configure`), and the
   [AWS CDK CLI](https://docs.aws.amazon.com/cdk/v2/guide/getting_started.html) (`npm install -g aws-cdk`)
-- A free [MTA real-time API key](https://api.mta.info/) (sign up, then find
-  your key under your account)
+
+No API keys or environment variables are required — the PATH data source
+needs no authentication (it's scraped as a public webpage).
 
 ## Setup
 
@@ -82,36 +104,23 @@ infra/
 npm install
 ```
 
-### Environment variables
-
-| Variable      | Required | Description                                                                       |
-| ------------- | -------- | --------------------------------------------------------------------------------- |
-| `MTA_API_KEY` | Yes      | API key from api.mta.info, used as `x-api-key` header for GTFS-realtime requests. |
-
-Locally (for running tests, nothing is required — tests mock all network
-calls). For deployment, the key is stored in AWS Systems Manager Parameter
-Store rather than passed as plaintext:
-
-```bash
-aws ssm put-parameter \
-  --name /next-train/mta-api-key \
-  --type SecureString \
-  --value "<your-mta-api-key>"
-```
-
 ## Build, lint, and test
 
 ```bash
 npm run lint       # eslint
 npm run format     # prettier --write
-npm run build      # tsc -> dist/
-npm test           # jest
+npm run build      # tsc -> dist/ (type-checking / local dev only, see below)
+npm test           # jest — mocks puppeteer-core/@sparticuz/chromium and the PATH feed
 ```
 
 ## Deploying the Lambda (AWS CDK)
 
+The CDK stack uses `aws-cdk-lib/aws-lambda-nodejs`'s `NodejsFunction`, which
+bundles `src/lambda/index.ts` (and its dependencies) with esbuild at deploy
+time — `npm run build`'s `dist/` output is used for local type-checking and
+tests only, not for deployment.
+
 ```bash
-npm run build                 # compile TypeScript -> dist/
 cd infra
 npx cdk bootstrap              # one-time per account/region
 npx cdk deploy \
@@ -122,6 +131,13 @@ npx cdk deploy \
 but the skill ID isn't known until you create the skill — see below, then
 redeploy with the flag once you have it). The stack outputs the deployed
 Lambda's ARN, which you'll use as the skill's endpoint.
+
+**Memory/timeout:** the function is provisioned with 2048 MB of memory and a
+20 second timeout — headless Chromium needs meaningfully more of both than a
+typical Lambda. `@sparticuz/chromium`'s docs recommend at least 512 MB (1600+
+MB preferred); we use the high end of that range plus headroom for cold
+starts. The function is also pinned to the `x86_64` architecture, since
+`@sparticuz/chromium`'s npm package only ships x64 Chromium binaries.
 
 ## Creating the Alexa skill (ASK CLI)
 
@@ -141,13 +157,14 @@ Then, from the Alexa Developer Console (or `ask smapi`):
 4. Build and test in the console's simulator, e.g.:
    - "Alexa, open Next Train"
    - "when's my next train at Grove Street"
-   - "are there any delays on the A line"
+   - "are there any delays on the Hoboken line"
 
 ## Extending to more stations/lines
 
 Add entries to `DEFAULT_STATIONS` in `src/data/stationRegistry.ts` with the
-correct `providerStationId` (PATH station slug or MTA GTFS parent stop ID)
-and, for MTA, the right `feedGroup`. Then add matching values/synonyms to
+station's official `providerStationId` code (see the full list of PATH
+station codes in `stationRegistry.ts`'s comments) and the `headSigns` that
+identify each line serving it. Then add matching values/synonyms to
 `skill-package/interactionModels/custom/en-US.json` so Alexa recognizes the
 spoken names. No changes are needed to the handlers, services, or router —
 they're fully driven by the registry.

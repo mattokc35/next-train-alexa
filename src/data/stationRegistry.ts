@@ -1,23 +1,25 @@
 import type { TransitProvider } from '../services/types';
 
 /**
- * A single line/route available at a station, in a provider-specific form.
+ * A single PATH line/route available at a station. The official ridepath.json
+ * feed (see PathService) does not expose a distinct route/line code — only a
+ * per-arrival `headSign` (destination name) and direction label. We identify
+ * a "line" here by the set of headsigns it can produce, so filtering by line
+ * means matching an arrival's headSign against this list.
  */
 export interface LineDefinition {
-  /** Canonical internal id, e.g. "mta-a" or "path-jsq-33-hob". */
+  /** Canonical internal id, e.g. "path-jsq-33". */
   id: string;
-  /** Human-friendly name used in Alexa responses, e.g. "A" or "Journal Square – 33rd". */
+  /** Human-friendly name used in Alexa responses, e.g. "Journal Square to 33rd Street". */
   displayName: string;
-  /** Provider-specific route identifier (PATH route code or MTA GTFS route_id). */
-  providerLineId: string;
-  /** MTA GTFS-realtime feed group this route belongs to (e.g. "ace", "123456s"). Unused for PATH. */
-  feedGroup?: string;
+  /** Destination headsigns (case-insensitive) that identify this line. */
+  headSigns: string[];
   /** Alternate spoken forms that should resolve to this line, lower-cased. */
   aliases: string[];
 }
 
 /**
- * A single station, general-purpose across both providers.
+ * A single PATH station.
  */
 export interface StationDefinition {
   /** Canonical internal id, e.g. "path-grove-street". */
@@ -25,7 +27,7 @@ export interface StationDefinition {
   provider: TransitProvider;
   /** Human-friendly name used in Alexa responses, e.g. "Grove Street". */
   displayName: string;
-  /** Provider-specific station identifier (PATH station slug or MTA GTFS parent stop_id). */
+  /** PATH's `consideredStation` station code from the official ridepath.json feed. */
   providerStationId: string;
   /** Alternate spoken forms that should resolve to this station, lower-cased. */
   aliases: string[];
@@ -50,10 +52,9 @@ export function normalize(input: string): string {
 }
 
 /**
- * General-purpose, in-memory directory of stations/lines for both providers.
- * Ships with a small set of default stations (used in the interaction model
- * samples and tests) but is designed to be extended with the full PATH and
- * MTA station lists without any code changes elsewhere in the skill.
+ * General-purpose, in-memory directory of PATH stations/lines. Ships with
+ * all 13 currently-operating PATH stations (used in the interaction model
+ * samples and tests), defaulting to Grove Street when no station is spoken.
  */
 export class StationRegistry {
   constructor(private readonly stations: StationDefinition[] = DEFAULT_STATIONS) {}
@@ -63,8 +64,8 @@ export class StationRegistry {
   }
 
   /**
-   * Resolve a spoken station name (required) and optional line/route name to
-   * a station definition. Returns undefined if no station matches.
+   * Resolve a spoken station name (required) to a station definition.
+   * Returns undefined if no station matches.
    */
   findStation(stationSlotValue: string): StationDefinition | undefined {
     const target = normalize(stationSlotValue);
@@ -76,9 +77,9 @@ export class StationRegistry {
   }
 
   /**
-   * Resolve a line/route within a given station by spoken name. Returns
-   * undefined if the station has no matching line (caller should fall back
-   * to "all lines at this station").
+   * Resolve a line within a given station by spoken name. Returns undefined
+   * if the station has no matching line (caller should fall back to "all
+   * lines at this station").
    */
   findLine(station: StationDefinition, lineSlotValue: string): LineDefinition | undefined {
     const target = normalize(lineSlotValue);
@@ -88,127 +89,155 @@ export class StationRegistry {
     );
   }
 
-  /** The station used when the user doesn't specify one (falls back to Grove St). */
+  /** The station used when the user doesn't specify one (falls back to Grove Street). */
   getDefaultStation(): StationDefinition {
     return this.stations[0];
   }
 }
 
 /**
- * Default/example stations covering both providers, used for local testing
- * and as the basis for the interaction model's sample utterances:
- *  - PATH: Grove Street, 33rd Street
- *  - MTA: 9th Street (A/C/E), World Trade Center (1/2/3)
- *
- * NOTE: `providerStationId` / `providerLineId` values below reflect the
- * publicly documented PATH (path.api.razza.dev) and MTA GTFS-realtime
- * identifiers at the time of writing. Because this scaffold was built
- * without live network access to verify the upstream schemas, double-check
- * these ids against the live APIs (see README) before deploying, and extend
- * this list with additional stations/lines as needed — the rest of the
- * skill is provider-agnostic and requires no other changes to support them.
+ * The four PATH lines, identified by the destination headsigns they produce
+ * in the official ridepath.json feed. Stop patterns below reflect PATH's
+ * public system map at the time of writing but were NOT verified against a
+ * live feed in this environment — double-check against
+ * https://www.panynj.gov/path/en/index.html before relying on them.
+ */
+const NWK_WTC: LineDefinition = {
+  id: 'path-nwk-wtc',
+  displayName: 'Newark to World Trade Center',
+  headSigns: ['Newark', 'World Trade Center'],
+  aliases: ['newark world trade center', 'newark line', 'nwk wtc'],
+};
+
+const HOB_WTC: LineDefinition = {
+  id: 'path-hob-wtc',
+  displayName: 'Hoboken to World Trade Center',
+  headSigns: ['Hoboken', 'World Trade Center'],
+  aliases: ['hoboken world trade center', 'wtc line', 'hob wtc'],
+};
+
+const HOB_33: LineDefinition = {
+  id: 'path-hob-33',
+  displayName: 'Hoboken to 33rd Street',
+  headSigns: ['Hoboken', '33rd Street'],
+  aliases: ['hoboken 33rd street', 'hoboken line', 'hob 33'],
+};
+
+const JSQ_33: LineDefinition = {
+  id: 'path-jsq-33',
+  displayName: 'Journal Square to 33rd Street',
+  headSigns: ['Journal Square', '33rd Street'],
+  aliases: ['journal square 33rd street', 'journal square line', 'jsq 33'],
+};
+
+/**
+ * All 13 currently-operating PATH stations. `providerStationId` values are
+ * the official station codes used by the ridepath.json feed's
+ * `consideredStation` field.
  */
 export const DEFAULT_STATIONS: StationDefinition[] = [
   {
     id: 'path-grove-street',
     provider: 'PATH',
     displayName: 'Grove Street',
-    providerStationId: 'grove_street',
+    providerStationId: 'GRV',
     aliases: ['grove st', 'grove street station'],
-    lines: [
-      {
-        id: 'path-jsq-33-hob',
-        displayName: 'Journal Square to 33rd Street',
-        providerLineId: 'JSQ_33_HOB',
-        aliases: ['journal square 33rd', 'jsq 33rd', 'hoboken line'],
-      },
-      {
-        id: 'path-hob-wtc',
-        displayName: 'Hoboken to World Trade Center',
-        providerLineId: 'HOB_WTC',
-        aliases: ['hoboken world trade center', 'wtc line'],
-      },
-    ],
+    lines: [NWK_WTC, JSQ_33],
   },
   {
     id: 'path-33rd-street',
     provider: 'PATH',
     displayName: '33rd Street',
-    providerStationId: 'thirty_third_street',
+    providerStationId: '33S',
     aliases: ['33rd st', '33rd street station', 'thirty third street'],
-    lines: [
-      {
-        id: 'path-jsq-33-hob',
-        displayName: 'Journal Square to 33rd Street',
-        providerLineId: 'JSQ_33_HOB',
-        aliases: ['journal square 33rd', 'jsq 33rd'],
-      },
-      {
-        id: 'path-nwk-33',
-        displayName: 'Newark to 33rd Street',
-        providerLineId: 'NWK_33',
-        aliases: ['newark 33rd'],
-      },
-    ],
+    lines: [HOB_33, JSQ_33],
   },
   {
-    id: 'mta-9th-street',
-    provider: 'MTA',
-    displayName: '9th Street',
-    providerStationId: 'A32',
-    aliases: ['9th st', 'ninth street', 'ninth st'],
-    lines: [
-      {
-        id: 'mta-a',
-        displayName: 'A',
-        providerLineId: 'A',
-        feedGroup: 'ace',
-        aliases: ['a train', 'a line'],
-      },
-      {
-        id: 'mta-c',
-        displayName: 'C',
-        providerLineId: 'C',
-        feedGroup: 'ace',
-        aliases: ['c train', 'c line'],
-      },
-      {
-        id: 'mta-e',
-        displayName: 'E',
-        providerLineId: 'E',
-        feedGroup: 'ace',
-        aliases: ['e train', 'e line'],
-      },
-    ],
+    id: 'path-newark',
+    provider: 'PATH',
+    displayName: 'Newark',
+    providerStationId: 'NWK',
+    aliases: ['newark station', 'newark penn station'],
+    lines: [NWK_WTC],
   },
   {
-    id: 'mta-world-trade-center',
-    provider: 'MTA',
+    id: 'path-harrison',
+    provider: 'PATH',
+    displayName: 'Harrison',
+    providerStationId: 'HAR',
+    aliases: ['harrison station'],
+    lines: [NWK_WTC],
+  },
+  {
+    id: 'path-journal-square',
+    provider: 'PATH',
+    displayName: 'Journal Square',
+    providerStationId: 'JSQ',
+    aliases: ['journal square station'],
+    lines: [NWK_WTC, JSQ_33],
+  },
+  {
+    id: 'path-newport',
+    provider: 'PATH',
+    displayName: 'Newport',
+    providerStationId: 'NEW',
+    aliases: ['newport station'],
+    lines: [NWK_WTC, HOB_WTC],
+  },
+  {
+    id: 'path-exchange-place',
+    provider: 'PATH',
+    displayName: 'Exchange Place',
+    providerStationId: 'EXP',
+    aliases: ['exchange place station'],
+    lines: [NWK_WTC, HOB_WTC],
+  },
+  {
+    id: 'path-hoboken',
+    provider: 'PATH',
+    displayName: 'Hoboken',
+    providerStationId: 'HOB',
+    aliases: ['hoboken station', 'hoboken terminal'],
+    lines: [HOB_WTC, HOB_33],
+  },
+  {
+    id: 'path-world-trade-center',
+    provider: 'PATH',
     displayName: 'World Trade Center',
-    providerStationId: '142',
+    providerStationId: 'WTC',
     aliases: ['wtc', 'world trade center station'],
-    lines: [
-      {
-        id: 'mta-1',
-        displayName: '1',
-        providerLineId: '1',
-        feedGroup: '123456s',
-        aliases: ['1 train', 'one train', 'one line'],
-      },
-      {
-        id: 'mta-2',
-        displayName: '2',
-        providerLineId: '2',
-        feedGroup: '123456s',
-        aliases: ['2 train', 'two train', 'two line'],
-      },
-      {
-        id: 'mta-3',
-        displayName: '3',
-        providerLineId: '3',
-        feedGroup: '123456s',
-        aliases: ['3 train', 'three train', 'three line'],
-      },
-    ],
+    lines: [NWK_WTC, HOB_WTC],
+  },
+  {
+    id: 'path-christopher-street',
+    provider: 'PATH',
+    displayName: 'Christopher Street',
+    providerStationId: 'CHR',
+    aliases: ['christopher st', 'christopher street station'],
+    lines: [HOB_33, JSQ_33],
+  },
+  {
+    id: 'path-9th-street',
+    provider: 'PATH',
+    displayName: '9th Street',
+    providerStationId: '09S',
+    aliases: ['9th st', 'ninth street', 'ninth st'],
+    lines: [HOB_33, JSQ_33],
+  },
+  {
+    id: 'path-14th-street',
+    provider: 'PATH',
+    displayName: '14th Street',
+    providerStationId: '14S',
+    aliases: ['14th st', 'fourteenth street'],
+    lines: [HOB_33, JSQ_33],
+  },
+  {
+    id: 'path-23rd-street',
+    provider: 'PATH',
+    displayName: '23rd Street',
+    providerStationId: '23S',
+    aliases: ['23rd st', 'twenty third street'],
+    lines: [HOB_33, JSQ_33],
   },
 ];

@@ -1,104 +1,210 @@
-import { PathService } from '../services/pathService';
+import type { RidePathResponse } from '../services/pathService';
 import type { ResolvedStation } from '../services/types';
 
-function buildResponse(overrides: Partial<Record<string, unknown>> = {}) {
+const RIDEPATH_URL = 'https://www.panynj.gov/bin/portauthority/ridepath.json';
+
+// puppeteer-core and @sparticuz/chromium are ESM-only packages that
+// pathService.ts loads via a dynamic `import()`. jest.mock() calls are
+// hoisted above imports and intercept that dynamic import the same way they
+// intercept a plain `require()`, so we mock them here with jest.fn() doubles
+// (names must start with "mock" to be usable inside the hoisted factory).
+const mockPageSetUserAgent = jest.fn().mockResolvedValue(undefined);
+const mockPageGoto = jest.fn().mockResolvedValue(undefined);
+const mockPageEvaluate = jest.fn();
+const mockPageClose = jest.fn().mockResolvedValue(undefined);
+const mockPage = {
+  setUserAgent: mockPageSetUserAgent,
+  goto: mockPageGoto,
+  evaluate: mockPageEvaluate,
+  close: mockPageClose,
+};
+const mockNewPage = jest.fn().mockResolvedValue(mockPage);
+const mockBrowserOnce = jest.fn();
+const mockLaunch = jest.fn().mockResolvedValue({ newPage: mockNewPage, once: mockBrowserOnce });
+const mockDefaultArgs = jest.fn().mockResolvedValue(['--headless-arg']);
+const mockExecutablePath = jest.fn().mockResolvedValue('/opt/chromium/chromium');
+
+jest.mock('puppeteer-core', () => ({
+  __esModule: true,
+  default: { launch: mockLaunch, defaultArgs: mockDefaultArgs },
+}));
+jest.mock('@sparticuz/chromium', () => ({
+  __esModule: true,
+  default: { args: ['--chromium-arg'], executablePath: mockExecutablePath },
+}));
+
+import { PathService, scrapeRidePathJson } from '../services/pathService';
+
+function buildMessage(
+  overrides: Partial<
+    RidePathResponse['results'][number]['destinations'][number]['messages'][number]
+  > = {},
+) {
   return {
-    ok: true,
-    status: 200,
-    statusText: 'OK',
-    json: async () => ({
-      upcomingTrains: [
-        {
-          projectedArrival: new Date(Date.now() + 5 * 60_000).toISOString(),
-          lastUpdated: new Date().toISOString(),
-          direction: 'TO_NY',
-          route: 'JSQ_33_HOB',
-          lineName: 'Journal Square – 33rd (via Hoboken)',
-          headSign: '33rd Street',
-        },
-        {
-          projectedArrival: new Date(Date.now() + 2 * 60_000).toISOString(),
-          lastUpdated: new Date().toISOString(),
-          direction: 'TO_NJ',
-          route: 'HOB_WTC',
-          headSign: 'Hoboken',
-        },
-        ...((overrides.extraTrains as unknown[]) ?? []),
-      ],
-    }),
+    target: 'NY',
+    secondsToArrival: '120',
+    arrivalTimeMessage: '2 min',
+    lineColor: '#FF9900',
+    headSign: '33rd Street',
+    lastUpdated: String(Date.now()),
+    ...overrides,
+  };
+}
+
+function buildFeed(overrides: Partial<RidePathResponse> = {}): RidePathResponse {
+  return {
+    results: [
+      {
+        consideredStation: 'GRV',
+        destinations: [
+          {
+            label: 'ToNY',
+            messages: [buildMessage({ headSign: '33rd Street', secondsToArrival: '300' })],
+          },
+          {
+            label: 'ToNJ',
+            messages: [buildMessage({ headSign: 'Newark', secondsToArrival: '120' })],
+          },
+        ],
+      },
+    ],
+    ...overrides,
   };
 }
 
 const grove: ResolvedStation = {
   provider: 'PATH',
   displayName: 'Grove Street',
-  providerStationId: 'grove_street',
+  providerStationId: 'GRV',
 };
 
-describe('PathService', () => {
-  it('normalizes and sorts upcoming trains soonest-first', async () => {
-    const fetchImpl = jest.fn().mockResolvedValue(buildResponse());
-    const service = new PathService({ fetchImpl });
+describe('PathService (business logic via injected fetcher)', () => {
+  it('normalizes and sorts upcoming arrivals soonest-first', async () => {
+    const fetcher = jest.fn().mockResolvedValue(buildFeed());
+    const service = new PathService({ fetcher });
 
     const arrivals = await service.getNextArrivals(grove);
 
     expect(arrivals).toHaveLength(2);
-    expect(arrivals[0].destination).toBe('Hoboken');
+    expect(arrivals[0].destination).toBe('Newark');
     expect(arrivals[0].minutesAway).toBeLessThanOrEqual(arrivals[1].minutesAway);
-    expect(fetchImpl).toHaveBeenCalledWith(expect.stringContaining('grove_street'));
   });
 
-  it('filters by providerLineId when a specific line is requested', async () => {
-    const fetchImpl = jest.fn().mockResolvedValue(buildResponse());
-    const service = new PathService({ fetchImpl });
+  it('filters by lineHeadSigns when a specific line is requested', async () => {
+    const fetcher = jest.fn().mockResolvedValue(buildFeed());
+    const service = new PathService({ fetcher });
 
-    const arrivals = await service.getNextArrivals({ ...grove, providerLineId: 'JSQ_33_HOB' });
+    const arrivals = await service.getNextArrivals({ ...grove, lineHeadSigns: ['Newark'] });
 
     expect(arrivals).toHaveLength(1);
-    expect(arrivals[0].destination).toBe('33rd Street');
+    expect(arrivals[0].destination).toBe('Newark');
   });
 
-  it('caches responses for repeated requests to the same station', async () => {
-    const fetchImpl = jest.fn().mockResolvedValue(buildResponse());
-    const service = new PathService({ fetchImpl, cacheTtlMs: 60_000 });
+  it('returns no arrivals when the station is absent from the feed', async () => {
+    const fetcher = jest.fn().mockResolvedValue(buildFeed());
+    const service = new PathService({ fetcher });
+
+    const arrivals = await service.getNextArrivals({ ...grove, providerStationId: 'UNKNOWN' });
+
+    expect(arrivals).toHaveLength(0);
+  });
+
+  it('caches the full feed response across repeated requests', async () => {
+    const fetcher = jest.fn().mockResolvedValue(buildFeed());
+    const service = new PathService({ fetcher, cacheTtlMs: 60_000 });
 
     await service.getNextArrivals(grove);
     await service.getNextArrivals(grove);
 
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
-  it('marks arrivals as alert when the feed data is stale', async () => {
-    const staleResponse = {
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      json: async () => ({
-        upcomingTrains: [
+  it('marks an arrival as delayed when arrivalTimeMessage indicates a delay', async () => {
+    const fetcher = jest.fn().mockResolvedValue(
+      buildFeed({
+        results: [
           {
-            projectedArrival: new Date(Date.now() + 5 * 60_000).toISOString(),
-            lastUpdated: new Date(Date.now() - 10 * 60_000).toISOString(),
-            direction: 'TO_NY',
-            route: 'JSQ_33_HOB',
-            headSign: '33rd Street',
+            consideredStation: 'GRV',
+            destinations: [
+              { label: 'ToNY', messages: [buildMessage({ arrivalTimeMessage: 'DELAYED' })] },
+            ],
           },
         ],
       }),
-    };
-    const fetchImpl = jest.fn().mockResolvedValue(staleResponse);
-    const service = new PathService({ fetchImpl });
+    );
+    const service = new PathService({ fetcher });
+
+    const arrivals = await service.getDelayStatus(grove);
+
+    expect(arrivals[0].status).toBe('delayed');
+  });
+
+  it('marks an arrival as alert when the feed data is stale', async () => {
+    const fetcher = jest.fn().mockResolvedValue(
+      buildFeed({
+        results: [
+          {
+            consideredStation: 'GRV',
+            destinations: [
+              {
+                label: 'ToNY',
+                messages: [buildMessage({ lastUpdated: String(Date.now() - 10 * 60_000) })],
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    const service = new PathService({ fetcher });
 
     const arrivals = await service.getDelayStatus(grove);
 
     expect(arrivals[0].status).toBe('alert');
   });
+});
 
-  it('throws a clear error when the upstream API request fails', async () => {
-    const fetchImpl = jest
-      .fn()
-      .mockResolvedValue({ ok: false, status: 503, statusText: 'Service Unavailable' });
-    const service = new PathService({ fetchImpl });
+describe('scrapeRidePathJson (mocking puppeteer-core + @sparticuz/chromium)', () => {
+  beforeEach(() => {
+    mockPageSetUserAgent.mockClear();
+    mockPageGoto.mockClear();
+    mockPageEvaluate.mockReset();
+    mockPageClose.mockClear();
+    mockNewPage.mockClear();
+    mockLaunch.mockClear();
+  });
 
-    await expect(service.getNextArrivals(grove)).rejects.toThrow(/PATH API request failed/);
+  it('launches headless Chromium once, navigates to ridepath.json, and parses the response body', async () => {
+    const feed = buildFeed();
+    mockPageEvaluate.mockResolvedValueOnce(JSON.stringify(feed));
+
+    const result = await scrapeRidePathJson();
+
+    expect(mockLaunch).toHaveBeenCalledTimes(1);
+    expect(mockPageGoto).toHaveBeenCalledWith(
+      RIDEPATH_URL,
+      expect.objectContaining({ waitUntil: 'networkidle2' }),
+    );
+    expect(mockPageSetUserAgent).toHaveBeenCalledWith(expect.stringContaining('Chrome'));
+    expect(result).toEqual(feed);
+    expect(mockPageClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('reuses the already-launched browser instance on a subsequent call (warm-invocation reuse)', async () => {
+    mockPageEvaluate.mockResolvedValueOnce(JSON.stringify(buildFeed()));
+
+    await scrapeRidePathJson();
+
+    // The browser was already launched by the previous test (module-level
+    // singleton, matching the real warm-Lambda-invocation behavior), so a
+    // second call should not launch Chromium again.
+    expect(mockLaunch).not.toHaveBeenCalled();
+    expect(mockNewPage).toHaveBeenCalledTimes(1);
+  });
+
+  it('throws a descriptive error when the page body is not valid JSON (Akamai challenge page)', async () => {
+    mockPageEvaluate.mockResolvedValueOnce('<html><body>Access Denied</body></html>');
+
+    await expect(scrapeRidePathJson()).rejects.toThrow(/Akamai/);
+    expect(mockPageClose).toHaveBeenCalledTimes(1);
   });
 });

@@ -42,12 +42,12 @@
             "when is the next train at {STATION}",
             "what time is the next train at {STATION}",
             "when's my next train at {STATION}",
-            "when's the next {LINE} train",
+            "when's the next train on the {LINE}",
             "when's the next {LINE} train at {STATION}",
             "how long until the next train at {STATION}",
-            "how long until the next {LINE} train",
+            "how long until the next train on the {LINE}",
             "next train at {STATION}",
-            "next {LINE} train at {STATION}",
+            "next train at {STATION} on the {LINE}",
             "when's the next train to {STATION}"
           ]
         },
@@ -66,14 +66,14 @@
           "samples": [
             "are there any delays",
             "are there any delays at {STATION}",
-            "are there any delays on the {LINE} line",
-            "is the {LINE} line delayed",
+            "are there any delays on the {LINE}",
+            "is the {LINE} delayed",
             "is there a delay at {STATION}",
             "should I detour",
             "should I take a detour",
             "should I detour around {STATION}",
             "is everything running on time at {STATION}",
-            "what's the status of the {LINE} line",
+            "what's the status of the {LINE}",
             "are there any service alerts for {STATION}",
             "any delays or should I detour"
           ]
@@ -83,24 +83,28 @@
         {
           "name": "STATION_TYPE",
           "values": [
+            { "id": "path-newark", "name": { "value": "Newark", "synonyms": ["Newark Penn Station"] } },
+            { "id": "path-harrison", "name": { "value": "Harrison" } },
+            { "id": "path-journal-square", "name": { "value": "Journal Square" } },
             { "id": "path-grove-street", "name": { "value": "Grove Street", "synonyms": ["Grove St"] } },
-            { "id": "path-33rd-street", "name": { "value": "33rd Street", "synonyms": ["33rd St", "thirty third street"] } },
-            { "id": "mta-9th-street", "name": { "value": "9th Street", "synonyms": ["ninth street", "9th St"] } },
-            { "id": "mta-world-trade-center", "name": { "value": "World Trade Center", "synonyms": ["WTC"] } }
+            { "id": "path-newport", "name": { "value": "Newport" } },
+            { "id": "path-exchange-place", "name": { "value": "Exchange Place" } },
+            { "id": "path-hoboken", "name": { "value": "Hoboken", "synonyms": ["Hoboken Terminal"] } },
+            { "id": "path-world-trade-center", "name": { "value": "World Trade Center", "synonyms": ["WTC"] } },
+            { "id": "path-christopher-street", "name": { "value": "Christopher Street", "synonyms": ["Christopher St"] } },
+            { "id": "path-9th-street", "name": { "value": "9th Street", "synonyms": ["ninth street", "9th St"] } },
+            { "id": "path-14th-street", "name": { "value": "14th Street", "synonyms": ["fourteenth street"] } },
+            { "id": "path-23rd-street", "name": { "value": "23rd Street", "synonyms": ["twenty third street"] } },
+            { "id": "path-33rd-street", "name": { "value": "33rd Street", "synonyms": ["33rd St", "thirty third street"] } }
           ]
         },
         {
           "name": "LINE_TYPE",
           "values": [
-            { "id": "path-jsq-33-hob", "name": { "value": "Journal Square to 33rd Street", "synonyms": ["JSQ 33rd", "Journal Square 33rd"] } },
-            { "id": "path-hob-wtc", "name": { "value": "Hoboken to World Trade Center", "synonyms": ["WTC line"] } },
-            { "id": "path-nwk-33", "name": { "value": "Newark to 33rd Street", "synonyms": ["Newark 33rd"] } },
-            { "id": "mta-a", "name": { "value": "A", "synonyms": ["A train", "A line"] } },
-            { "id": "mta-c", "name": { "value": "C", "synonyms": ["C train", "C line"] } },
-            { "id": "mta-e", "name": { "value": "E", "synonyms": ["E train", "E line"] } },
-            { "id": "mta-1", "name": { "value": "1", "synonyms": ["one train", "one line"] } },
-            { "id": "mta-2", "name": { "value": "2", "synonyms": ["two train", "two line"] } },
-            { "id": "mta-3", "name": { "value": "3", "synonyms": ["three train", "three line"] } }
+            { "id": "path-nwk-wtc", "name": { "value": "Newark to World Trade Center", "synonyms": ["Newark line", "Newark World Trade Center"] } },
+            { "id": "path-hob-wtc", "name": { "value": "Hoboken to World Trade Center", "synonyms": ["WTC line", "Hoboken World Trade Center"] } },
+            { "id": "path-hob-33", "name": { "value": "Hoboken to 33rd Street", "synonyms": ["Hoboken line", "Hoboken 33rd Street"] } },
+            { "id": "path-jsq-33", "name": { "value": "Journal Square to 33rd Street", "synonyms": ["Journal Square line", "JSQ 33rd Street"] } }
           ]
         }
       ]

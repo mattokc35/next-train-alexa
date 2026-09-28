@@ -1,8 +1,10 @@
 /**
- * Transit provider identifiers supported by the skill. New providers should be
- * added here and given a corresponding TransitService implementation.
+ * Transit provider identifiers supported by the skill. Currently PATH-only,
+ * but kept as a union (rather than a literal) so a future provider (e.g. MTA
+ * subway) can be reintroduced by adding a value here and a corresponding
+ * TransitService implementation, without touching this file's consumers.
  */
-export type TransitProvider = 'PATH' | 'MTA';
+export type TransitProvider = 'PATH';
 
 /**
  * Normalized status describing whether a train/line is running as expected.
@@ -11,16 +13,16 @@ export type TrainStatus = 'on-time' | 'delayed' | 'alert' | 'unknown';
 
 /**
  * A single normalized upcoming train arrival, regardless of which upstream
- * feed (PATH REST API or MTA GTFS-realtime) it originated from.
+ * feed it originated from.
  */
 export interface TrainArrival {
   /** Provider that produced this arrival. */
   provider: TransitProvider;
   /** Human-friendly station name, e.g. "Grove Street" or "World Trade Center". */
   stationName: string;
-  /** Human-friendly line/route name, e.g. "A" or "Newark-World Trade Center". */
+  /** Human-friendly line/route name, e.g. "Hoboken to 33rd Street". */
   lineName: string;
-  /** Human-friendly headsign/direction, e.g. "to 33rd Street" or "Uptown". */
+  /** Human-friendly headsign/direction, e.g. "33rd Street" or "Hoboken". */
   destination: string;
   /** Minutes from now until the train is expected to arrive. */
   minutesAway: number;
@@ -37,20 +39,24 @@ export interface ResolvedStation {
   provider: TransitProvider;
   /** Canonical, human-friendly station name to use in Alexa responses. */
   displayName: string;
-  /** Provider-specific station identifier (PATH station id or MTA GTFS stop id). */
+  /** Provider-specific station identifier (PATH's `consideredStation` code, e.g. "GRV"). */
   providerStationId: string;
-  /** Optional provider-specific line/route identifier, if the user specified one. */
-  providerLineId?: string;
-  /** Human-friendly line name to use in Alexa responses, if known. */
+  /** Human-friendly line name to use in Alexa responses, if the user specified a line. */
   lineDisplayName?: string;
-  /** MTA GTFS-realtime feed group (e.g. "ace"); unused for PATH. */
-  feedGroup?: string;
+  /**
+   * Headsigns (destination names) that identify this line in PATH's official
+   * ridepath.json feed, used to filter arrivals since that feed does not
+   * expose a distinct route/line code (see PathService for details).
+   * Undefined/empty means "any line at this station".
+   */
+  lineHeadSigns?: string[];
 }
 
 /**
- * Common interface implemented by each transit provider adapter (PathService,
- * MtaService). Consumers (the transit router / intent handlers) only depend on
- * this interface, never on provider-specific details.
+ * Common interface implemented by each transit provider adapter (currently
+ * just PathService). Consumers (the transit router / intent handlers) only
+ * depend on this interface, never on provider-specific details, so a new
+ * provider can be added later without changing handlers or the router.
  */
 export interface TransitService {
   readonly provider: TransitProvider;

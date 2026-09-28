@@ -1,22 +1,18 @@
 import { StationRegistry } from '../data/stationRegistry';
 import type { StationDefinition } from '../data/stationRegistry';
-import type { MtaService } from './mtaService';
-import type { PathService } from './pathService';
 import type { ResolvedStation, TrainArrival, TransitService } from './types';
 
 /**
- * Resolves spoken station/line slot values to a concrete provider + service,
- * and dispatches to the matching TransitService (PathService or MtaService).
- * This is the only place that knows both providers exist — intent handlers
- * only ever talk to the TransitRouter.
+ * Resolves spoken station/line slot values to a ResolvedStation and
+ * dispatches to the injected TransitService. Currently PATH-only, but
+ * intent handlers only ever talk to the TransitRouter — reintroducing a
+ * second provider would only require changing this class's constructor to
+ * pick a service based on `station.provider`, not the handlers.
  */
 export class TransitRouter {
   constructor(
     private readonly registry: StationRegistry,
-    private readonly services: {
-      path: TransitService | PathService;
-      mta: TransitService | MtaService;
-    },
+    private readonly service: TransitService,
   ) {}
 
   /**
@@ -37,19 +33,16 @@ export class TransitRouter {
     }
 
     const line = lineSlotValue ? this.registry.findLine(station, lineSlotValue) : undefined;
-    const effectiveLine = line ?? station.lines[0];
 
     const resolved: ResolvedStation = {
       provider: station.provider,
       displayName: station.displayName,
       providerStationId: station.providerStationId,
-      providerLineId: line?.providerLineId,
       lineDisplayName: line?.displayName,
-      feedGroup: effectiveLine?.feedGroup,
+      lineHeadSigns: line?.headSigns,
     };
 
-    const service = station.provider === 'PATH' ? this.services.path : this.services.mta;
-    return { resolved, service, station };
+    return { resolved, service: this.service, station };
   }
 
   async getNextArrivals(

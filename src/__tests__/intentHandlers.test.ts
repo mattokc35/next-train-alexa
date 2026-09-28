@@ -53,7 +53,7 @@ const mockStation: StationDefinition = {
   id: 'path-grove-street',
   provider: 'PATH',
   displayName: 'Grove Street',
-  providerStationId: 'grove_street',
+  providerStationId: 'GRV',
   aliases: [],
   lines: [],
 };

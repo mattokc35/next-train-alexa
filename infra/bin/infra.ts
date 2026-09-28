@@ -10,5 +10,5 @@ new NextTrainStack(app, 'NextTrainAlexaStack', {
     account: process.env.CDK_DEFAULT_ACCOUNT,
     region: process.env.CDK_DEFAULT_REGION ?? 'us-east-1',
   },
-  description: 'Lambda backend for the Next Train Alexa skill (PATH + MTA real-time arrivals).',
+  description: 'Lambda backend for the Next Train Alexa skill (PATH real-time arrivals).',
 });

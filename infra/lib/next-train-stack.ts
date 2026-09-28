@@ -1,7 +1,8 @@
+import * as path from 'node:path';
 import * as cdk from 'aws-cdk-lib';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as iam from 'aws-cdk-lib/aws-iam';
-import * as ssm from 'aws-cdk-lib/aws-ssm';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
 
@@ -16,11 +17,14 @@ export interface NextTrainStackProps extends cdk.StackProps {
 }
 
 /**
- * Defines the Lambda function backing the Next Train Alexa skill, its
- * execution role, and the resource policy that allows the Alexa Skills Kit
- * service to invoke it. The MTA API key is read from an SSM SecureString
- * parameter at deploy time and injected as a Lambda environment variable —
- * see README.md for how to create that parameter.
+ * Defines the Lambda function backing the Next Train Alexa skill and the
+ * resource policy that allows the Alexa Skills Kit service to invoke it.
+ *
+ * The function bundles `puppeteer-core` and `@sparticuz/chromium` — a
+ * Lambda-compatible headless Chromium build — used to scrape PATH's
+ * official ridepath.json feed past its Akamai bot-check (see
+ * src/services/pathService.ts). Memory and timeout are sized generously
+ * (2048 MB / 20s) to accommodate launching a real browser per cold start.
  */
 export class NextTrainStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: NextTrainStackProps = {}) {
@@ -29,40 +33,28 @@ export class NextTrainStack extends cdk.Stack {
     const alexaSkillId =
       props.alexaSkillId ?? (this.node.tryGetContext('alexaSkillId') as string | undefined);
 
-    const mtaApiKeyParam = ssm.StringParameter.valueForStringParameter(
-      this,
-      '/next-train/mta-api-key',
-    );
-
-    const fn = new lambda.Function(this, 'NextTrainFunction', {
+    const fn = new NodejsFunction(this, 'NextTrainFunction', {
       functionName: 'next-train-alexa-skill',
-      runtime: lambda.Runtime.NODEJS_18_X,
-      handler: 'lambda/index.handler',
-      code: lambda.Code.fromAsset('../dist'),
-      timeout: cdk.Duration.seconds(8),
-      memorySize: 256,
-      environment: {
-        MTA_API_KEY: mtaApiKeyParam,
-      },
+      entry: path.join(__dirname, '../../src/lambda/index.ts'),
+      handler: 'handler',
+      runtime: lambda.Runtime.NODEJS_20_X,
+      // @sparticuz/chromium only ships x64 binaries via npm (arm64 requires
+      // a separately-hosted pack file — see its README), so pin the
+      // architecture explicitly rather than relying on the account default.
+      architecture: lambda.Architecture.X86_64,
+      timeout: cdk.Duration.seconds(20),
+      memorySize: 2048,
       logRetention: logs.RetentionDays.TWO_WEEKS,
+      bundling: {
+        // puppeteer-core and @sparticuz/chromium ship native/binary assets
+        // and rely on relative path resolution to find them — both must be
+        // excluded from esbuild's bundle and instead installed as real
+        // node_modules alongside the bundled handler code.
+        nodeModules: ['puppeteer-core', '@sparticuz/chromium'],
+        minify: true,
+        sourceMap: true,
+      },
     });
-
-    // Scope the execution role down to just CloudWatch Logs (the CDK-managed
-    // basic execution role already grants this) — no additional AWS
-    // permissions are required since both upstream APIs are called over
-    // plain HTTPS from within the function.
-    fn.role?.addToPrincipalPolicy(
-      new iam.PolicyStatement({
-        actions: ['ssm:GetParameter'],
-        resources: [
-          cdk.Stack.of(this).formatArn({
-            service: 'ssm',
-            resource: 'parameter',
-            resourceName: 'next-train/mta-api-key',
-          }),
-        ],
-      }),
-    );
 
     fn.addPermission('AlexaSkillInvokePermission', {
       principal: new iam.ServicePrincipal('alexa-appkit.amazon.com'),
