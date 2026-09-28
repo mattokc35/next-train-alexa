@@ -1,0 +1,109 @@
+{
+  "interactionModel": {
+    "languageModel": {
+      "invocationName": "next train",
+      "intents": [
+        {
+          "name": "AMAZON.CancelIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.HelpIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.StopIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.NavigateHomeIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.FallbackIntent",
+          "samples": []
+        },
+        {
+          "name": "GetNextTrainIntent",
+          "slots": [
+            {
+              "name": "STATION",
+              "type": "STATION_TYPE"
+            },
+            {
+              "name": "LINE",
+              "type": "LINE_TYPE"
+            }
+          ],
+          "samples": [
+            "when's my next train",
+            "when is my next train",
+            "when's the next train at {STATION}",
+            "when is the next train at {STATION}",
+            "what time is the next train at {STATION}",
+            "when's my next train at {STATION}",
+            "when's the next {LINE} train",
+            "when's the next {LINE} train at {STATION}",
+            "how long until the next train at {STATION}",
+            "how long until the next {LINE} train",
+            "next train at {STATION}",
+            "next {LINE} train at {STATION}",
+            "when's the next train to {STATION}"
+          ]
+        },
+        {
+          "name": "GetDelayStatusIntent",
+          "slots": [
+            {
+              "name": "STATION",
+              "type": "STATION_TYPE"
+            },
+            {
+              "name": "LINE",
+              "type": "LINE_TYPE"
+            }
+          ],
+          "samples": [
+            "are there any delays",
+            "are there any delays at {STATION}",
+            "are there any delays on the {LINE} line",
+            "is the {LINE} line delayed",
+            "is there a delay at {STATION}",
+            "should I detour",
+            "should I take a detour",
+            "should I detour around {STATION}",
+            "is everything running on time at {STATION}",
+            "what's the status of the {LINE} line",
+            "are there any service alerts for {STATION}",
+            "any delays or should I detour"
+          ]
+        }
+      ],
+      "types": [
+        {
+          "name": "STATION_TYPE",
+          "values": [
+            { "id": "path-grove-street", "name": { "value": "Grove Street", "synonyms": ["Grove St"] } },
+            { "id": "path-33rd-street", "name": { "value": "33rd Street", "synonyms": ["33rd St", "thirty third street"] } },
+            { "id": "mta-9th-street", "name": { "value": "9th Street", "synonyms": ["ninth street", "9th St"] } },
+            { "id": "mta-world-trade-center", "name": { "value": "World Trade Center", "synonyms": ["WTC"] } }
+          ]
+        },
+        {
+          "name": "LINE_TYPE",
+          "values": [
+            { "id": "path-jsq-33-hob", "name": { "value": "Journal Square to 33rd Street", "synonyms": ["JSQ 33rd", "Journal Square 33rd"] } },
+            { "id": "path-hob-wtc", "name": { "value": "Hoboken to World Trade Center", "synonyms": ["WTC line"] } },
+            { "id": "path-nwk-33", "name": { "value": "Newark to 33rd Street", "synonyms": ["Newark 33rd"] } },
+            { "id": "mta-a", "name": { "value": "A", "synonyms": ["A train", "A line"] } },
+            { "id": "mta-c", "name": { "value": "C", "synonyms": ["C train", "C line"] } },
+            { "id": "mta-e", "name": { "value": "E", "synonyms": ["E train", "E line"] } },
+            { "id": "mta-1", "name": { "value": "1", "synonyms": ["one train", "one line"] } },
+            { "id": "mta-2", "name": { "value": "2", "synonyms": ["two train", "two line"] } },
+            { "id": "mta-3", "name": { "value": "3", "synonyms": ["three train", "three line"] } }
+          ]
+        }
+      ]
+    }
+  }
+}
