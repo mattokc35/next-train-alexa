@@ -1,0 +1,20 @@
+{
+  "askcliStatesVersion": "2020-03-31",
+  "profiles": {
+    "default": {
+      "skillId": "amzn1.ask.skill.a3ba2cc8-f8bb-448a-aaf1-5b97fa505b1b",
+      "skillInfrastructure": {
+        "@ask-cli/cfn-deployer": {
+          "deployState": {}
+        }
+      },
+      "deploymentStatus": "COMPLETE",
+      "skillMetadata": {
+        "lastImportId": "amzn1.ask-package.import.cfdd038f-a334-48b1-9240-8e79d5de1440",
+        "lastImportTimestamp": "2026-09-29T03:42:07.888Z",
+        "lastDeployHash": "O3oQNijASnHP8C1GNhpLjozvNmo=",
+        "lastDeployType": "interaction-model"
+      }
+    }
+  }
+}

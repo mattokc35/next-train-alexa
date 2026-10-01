@@ -18,9 +18,10 @@ Alexa → Lambda (ask-sdk-core handlers) → TransitRouter → StationRegistry
 ```
 
 - **Handlers** (`src/handlers/`): `LaunchRequestHandler`, `GetNextTrainIntentHandler`,
-  `GetDelayStatusIntentHandler`, plus built-in Help/Cancel/Stop/Fallback/SessionEnded
-  and a generic error handler. Intent handlers are factory functions that take a
-  `TransitRouter`, so they're unit-testable without a live Lambda.
+  `GetDelayStatusIntentHandler`, `SetHomeStationIntentHandler`, plus built-in
+  Help/Cancel/Stop/Fallback/SessionEnded and a generic error handler. Intent
+  handlers are factory functions that take a `TransitRouter`, so they're
+  unit-testable without a live Lambda.
 - **Services** (`src/services/`): `TransitService` is the common interface a
   provider adapter implements, normalizing into a shared `TrainArrival` type.
   The interface (and the `TransitProvider` union) is intentionally kept
@@ -34,8 +35,26 @@ Alexa → Lambda (ask-sdk-core handlers) → TransitRouter → StationRegistry
   identify a line in the feed. Extend `DEFAULT_STATIONS` to add more PATH
   stations — no other code needs to change.
 - **Infra** (`infra/`): AWS CDK (TypeScript) stack defining the Lambda
-  function (bundled with `puppeteer-core` + `@sparticuz/chromium`) and the
-  resource policy that lets the Alexa Skills Kit invoke it.
+  function (bundled with `puppeteer-core` + `@sparticuz/chromium`), a
+  DynamoDB table for per-user "home base" station persistence, and the
+  resource policy that lets the Alexa Skills Kit invoke the Lambda.
+
+### Home base station
+
+Say "set my home base station to Grove Street" (or "make {station} my home
+station") and the skill remembers it per-user in DynamoDB
+(`ask-sdk-dynamodb-persistence-adapter`, keyed by Alexa `userId`). After
+that, asking for a next train or delay status *without* naming a station
+(e.g. just "when's my next train") falls back to the saved home base station
+instead of requiring a `{STATION}` slot every time. A spoken station name
+always takes precedence over the saved home base.
+
+### Multiple upcoming arrivals
+
+By default, "when's my next train" lists up to 3 upcoming arrivals. You can
+ask for a specific count instead, e.g. "what are the next 2 trains at Grove
+Street" or "when are the next few 33rd Street trains coming to Grove
+Street" (capped at 5 to keep the spoken response reasonable).
 
 ### Data source & Akamai bot-check caveat
 
@@ -96,7 +115,10 @@ infra/
   [AWS CDK CLI](https://docs.aws.amazon.com/cdk/v2/guide/getting_started.html) (`npm install -g aws-cdk`)
 
 No API keys or environment variables are required — the PATH data source
-needs no authentication (it's scraped as a public webpage).
+needs no authentication (it's scraped as a public webpage). The Lambda is
+configured with `HOME_STATION_TABLE_NAME` automatically by the CDK stack
+(pointing at the DynamoDB table it provisions); you don't need to set it
+by hand.
 
 ## Setup
 
@@ -158,6 +180,8 @@ Then, from the Alexa Developer Console (or `ask smapi`):
    - "Alexa, open Next Train"
    - "when's my next train at Grove Street"
    - "are there any delays on the Hoboken line"
+   - "set my home base station to Grove Street"
+   - "what are the next 2 trains at Grove Street"
 
 ## Extending to more stations/lines
 

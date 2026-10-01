@@ -8,6 +8,7 @@ import type { TrainArrival } from '../services/types';
 function buildHandlerInput(
   intentName: string,
   slots: Record<string, string | undefined>,
+  persistentAttributes: Record<string, unknown> = {},
 ): HandlerInput {
   const speaks: string[] = [];
   const responseBuilder = {
@@ -22,6 +23,12 @@ function buildHandlerInput(
       return this;
     }),
     getResponse: jest.fn(() => ({ outputSpeech: speaks.join(' ') })),
+  };
+
+  const attributesManager = {
+    getPersistentAttributes: jest.fn().mockResolvedValue(persistentAttributes),
+    setPersistentAttributes: jest.fn(),
+    savePersistentAttributes: jest.fn().mockResolvedValue(undefined),
   };
 
   return {
@@ -46,6 +53,7 @@ function buildHandlerInput(
       },
     },
     responseBuilder,
+    attributesManager,
   } as unknown as HandlerInput;
 }
 
@@ -91,9 +99,26 @@ describe('GetNextTrainIntentHandler', () => {
 
     const response = (await handler.handle(handlerInput)) as unknown as { outputSpeech: string };
 
-    expect(router.getNextArrivals).toHaveBeenCalledWith('Grove Street', undefined);
+    expect(router.getNextArrivals).toHaveBeenCalledWith('Grove Street', undefined, null);
     expect(response.outputSpeech).toContain('World Trade Center');
     expect(response.outputSpeech).toContain('4 minutes');
+  });
+
+  it('passes a spoken DESTINATION slot through to the router', async () => {
+    const router = {
+      getNextArrivals: jest
+        .fn()
+        .mockResolvedValue({ station: mockStation, arrivals: [mockArrival] }),
+    } as unknown as TransitRouter;
+    const handler = createGetNextTrainIntentHandler(router);
+    const handlerInput = buildHandlerInput('GetNextTrainIntent', {
+      STATION: 'Grove Street',
+      DESTINATION: '33rd Street',
+    });
+
+    await handler.handle(handlerInput);
+
+    expect(router.getNextArrivals).toHaveBeenCalledWith('Grove Street', null, '33rd Street');
   });
 
   it('gives a friendly error when the station cannot be resolved', async () => {
@@ -118,6 +143,95 @@ describe('GetNextTrainIntentHandler', () => {
     const response = (await handler.handle(handlerInput)) as unknown as { outputSpeech: string };
 
     expect(response.outputSpeech).toContain('trouble reaching real-time train data');
+  });
+
+  it('falls back to the saved home base station when no STATION slot is given', async () => {
+    const router = {
+      getNextArrivals: jest
+        .fn()
+        .mockResolvedValue({ station: mockStation, arrivals: [mockArrival] }),
+    } as unknown as TransitRouter;
+    const handler = createGetNextTrainIntentHandler(router);
+    const handlerInput = buildHandlerInput(
+      'GetNextTrainIntent',
+      {},
+      { homeStationDisplayName: 'Grove Street' },
+    );
+
+    await handler.handle(handlerInput);
+
+    expect(router.getNextArrivals).toHaveBeenCalledWith('Grove Street', null, null);
+  });
+
+  it('prefers a spoken STATION slot over the saved home base station', async () => {
+    const router = {
+      getNextArrivals: jest
+        .fn()
+        .mockResolvedValue({ station: mockStation, arrivals: [mockArrival] }),
+    } as unknown as TransitRouter;
+    const handler = createGetNextTrainIntentHandler(router);
+    const handlerInput = buildHandlerInput(
+      'GetNextTrainIntent',
+      { STATION: '33rd Street' },
+      { homeStationDisplayName: 'Grove Street' },
+    );
+
+    await handler.handle(handlerInput);
+
+    expect(router.getNextArrivals).toHaveBeenCalledWith('33rd Street', null, null);
+  });
+
+  it('gives a friendly error mentioning home base when no station is known', async () => {
+    const router = {
+      getNextArrivals: jest.fn().mockResolvedValue(undefined),
+    } as unknown as TransitRouter;
+    const handler = createGetNextTrainIntentHandler(router);
+    const handlerInput = buildHandlerInput('GetNextTrainIntent', {});
+
+    const response = (await handler.handle(handlerInput)) as unknown as { outputSpeech: string };
+
+    expect(response.outputSpeech).toContain('home base station');
+  });
+
+  it('honors a spoken COUNT slot to list more upcoming arrivals', async () => {
+    const arrivals: TrainArrival[] = [
+      { ...mockArrival, minutesAway: 2 },
+      { ...mockArrival, minutesAway: 8, destination: 'Journal Square' },
+      { ...mockArrival, minutesAway: 14 },
+      { ...mockArrival, minutesAway: 20, destination: 'Journal Square' },
+    ];
+    const router = {
+      getNextArrivals: jest.fn().mockResolvedValue({ station: mockStation, arrivals }),
+    } as unknown as TransitRouter;
+    const handler = createGetNextTrainIntentHandler(router);
+    const handlerInput = buildHandlerInput('GetNextTrainIntent', {
+      STATION: 'Grove Street',
+      COUNT: '4',
+    });
+
+    const response = (await handler.handle(handlerInput)) as unknown as { outputSpeech: string };
+
+    expect(response.outputSpeech).toContain('20 minutes');
+  });
+
+  it('clamps an out-of-range COUNT slot to the maximum allowed', async () => {
+    const arrivals: TrainArrival[] = Array.from({ length: 6 }, (_, index) => ({
+      ...mockArrival,
+      minutesAway: index + 1,
+    }));
+    const router = {
+      getNextArrivals: jest.fn().mockResolvedValue({ station: mockStation, arrivals }),
+    } as unknown as TransitRouter;
+    const handler = createGetNextTrainIntentHandler(router);
+    const handlerInput = buildHandlerInput('GetNextTrainIntent', {
+      STATION: 'Grove Street',
+      COUNT: '99',
+    });
+
+    const response = (await handler.handle(handlerInput)) as unknown as { outputSpeech: string };
+
+    expect(response.outputSpeech).toContain('5 minutes');
+    expect(response.outputSpeech).not.toContain('6 minutes');
   });
 });
 
@@ -160,5 +274,23 @@ describe('GetDelayStatusIntentHandler', () => {
     const response = (await handler.handle(handlerInput)) as unknown as { outputSpeech: string };
 
     expect(response.outputSpeech).toContain('Signal problems near Exchange Place');
+  });
+
+  it('falls back to the saved home base station when no STATION slot is given', async () => {
+    const router = {
+      getDelayStatus: jest
+        .fn()
+        .mockResolvedValue({ station: mockStation, arrivals: [mockArrival] }),
+    } as unknown as TransitRouter;
+    const handler = createGetDelayStatusIntentHandler(router);
+    const handlerInput = buildHandlerInput(
+      'GetDelayStatusIntent',
+      {},
+      { homeStationDisplayName: 'Grove Street' },
+    );
+
+    await handler.handle(handlerInput);
+
+    expect(router.getDelayStatus).toHaveBeenCalledWith('Grove Street', null);
   });
 });

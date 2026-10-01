@@ -1,4 +1,4 @@
-import { StationRegistry } from '../data/stationRegistry';
+import { StationRegistry, normalize } from '../data/stationRegistry';
 import type { StationDefinition } from '../data/stationRegistry';
 import type { ResolvedStation, TrainArrival, TransitService } from './types';
 
@@ -45,27 +45,55 @@ export class TransitRouter {
     return { resolved, service: this.service, station };
   }
 
+  /**
+   * Filters arrivals down to those heading toward a spoken destination
+   * station (e.g. "the 33rd Street train"). PATH's official feed already
+   * reports each arrival's `destination` as a station name, so we resolve
+   * the spoken destination to a canonical station and match on its
+   * `displayName` rather than requiring an exact full line name like the
+   * LINE slot does.
+   */
+  private filterByDestination(
+    arrivals: TrainArrival[],
+    destinationSlotValue: string | undefined,
+  ): TrainArrival[] {
+    if (!destinationSlotValue) {
+      return arrivals;
+    }
+    const destinationStation = this.registry.findStation(destinationSlotValue);
+    const target = normalize(destinationStation?.displayName ?? destinationSlotValue);
+    // PATH headsigns sometimes carry a routing qualifier, e.g.
+    // "33rd Street via Hoboken" — match on the base destination name so a
+    // spoken "33rd Street" still matches regardless of the via-suffix.
+    return arrivals.filter((arrival) => {
+      const baseDestination = arrival.destination.split(/\s+via\s+/i)[0];
+      return normalize(baseDestination) === target;
+    });
+  }
+
   async getNextArrivals(
     stationSlotValue: string | undefined,
     lineSlotValue: string | undefined,
+    destinationSlotValue?: string,
   ): Promise<{ station: StationDefinition; arrivals: TrainArrival[] } | undefined> {
     const match = this.resolve(stationSlotValue, lineSlotValue);
     if (!match) {
       return undefined;
     }
     const arrivals = await match.service.getNextArrivals(match.resolved);
-    return { station: match.station, arrivals };
+    return { station: match.station, arrivals: this.filterByDestination(arrivals, destinationSlotValue) };
   }
 
   async getDelayStatus(
     stationSlotValue: string | undefined,
     lineSlotValue: string | undefined,
+    destinationSlotValue?: string,
   ): Promise<{ station: StationDefinition; arrivals: TrainArrival[] } | undefined> {
     const match = this.resolve(stationSlotValue, lineSlotValue);
     if (!match) {
       return undefined;
     }
     const arrivals = await match.service.getDelayStatus(match.resolved);
-    return { station: match.station, arrivals };
+    return { station: match.station, arrivals: this.filterByDestination(arrivals, destinationSlotValue) };
   }
 }

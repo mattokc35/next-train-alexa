@@ -11,18 +11,25 @@
             "Alexa, ask Next Train if there are any delays on the Hoboken line",
             "Alexa, open Next Train"
           ],
-          "keywords": ["train", "PATH", "transit", "commute"]
+          "keywords": [
+            "train",
+            "PATH",
+            "transit",
+            "commute"
+          ]
         }
       },
       "isAvailableWorldwide": false,
       "testingInstructions": "Ask about the default stations: PATH Grove Street and PATH 33rd Street.",
-      "category": "TRANSPORTATION",
-      "distributionCountries": ["US"]
+      "category": "PUBLIC_TRANSPORTATION",
+      "distributionCountries": [
+        "US"
+      ]
     },
     "apis": {
       "custom": {
         "endpoint": {
-          "sourceDir": "../"
+          "uri": "arn:aws:lambda:us-east-1:631139985447:function:next-train-alexa-skill"
         },
         "interfaces": []
       }

@@ -10,7 +10,9 @@ export const HelpIntentHandler: RequestHandler = {
   handle(handlerInput) {
     const speakOutput =
       "You can ask me things like, when's my next train at Grove Street, " +
-      'or, are there any delays on the Hoboken line. What would you like to know?';
+      'or, are there any delays on the Hoboken line. ' +
+      'You can also say, set my home base station to Grove Street, and I\'ll remember it ' +
+      'so you can just ask for your next train without naming a station. What would you like to know?';
     return handlerInput.responseBuilder.speak(speakOutput).reprompt(speakOutput).getResponse();
   },
 };

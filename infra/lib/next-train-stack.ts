@@ -4,6 +4,7 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import { Construct } from 'constructs';
 
 export interface NextTrainStackProps extends cdk.StackProps {
@@ -33,6 +34,15 @@ export class NextTrainStack extends cdk.Stack {
     const alexaSkillId =
       props.alexaSkillId ?? (this.node.tryGetContext('alexaSkillId') as string | undefined);
 
+    // Stores each user's saved "home base" station (see SetHomeStationIntent)
+    // via ask-sdk-dynamodb-persistence-adapter, keyed by Alexa userId.
+    const homeStationTable = new dynamodb.Table(this, 'HomeStationTable', {
+      tableName: 'next-train-alexa-home-stations',
+      partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
     const fn = new NodejsFunction(this, 'NextTrainFunction', {
       functionName: 'next-train-alexa-skill',
       entry: path.join(__dirname, '../../src/lambda/index.ts'),
@@ -45,6 +55,9 @@ export class NextTrainStack extends cdk.Stack {
       timeout: cdk.Duration.seconds(20),
       memorySize: 2048,
       logRetention: logs.RetentionDays.TWO_WEEKS,
+      environment: {
+        HOME_STATION_TABLE_NAME: homeStationTable.tableName,
+      },
       bundling: {
         // puppeteer-core and @sparticuz/chromium ship native/binary assets
         // and rely on relative path resolution to find them — both must be
@@ -55,6 +68,8 @@ export class NextTrainStack extends cdk.Stack {
         sourceMap: true,
       },
     });
+
+    homeStationTable.grantReadWriteData(fn);
 
     fn.addPermission('AlexaSkillInvokePermission', {
       principal: new iam.ServicePrincipal('alexa-appkit.amazon.com'),

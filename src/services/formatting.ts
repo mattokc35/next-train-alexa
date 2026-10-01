@@ -7,26 +7,38 @@ import type { TrainArrival } from '../services/types';
 export function formatNextTrainSpeech(
   stationDisplayName: string,
   arrivals: TrainArrival[],
+  count = 3,
 ): string {
   if (arrivals.length === 0) {
     return `Sorry, I couldn't find any upcoming trains for ${stationDisplayName} right now.`;
   }
 
-  const [next, ...rest] = arrivals;
-  const minutesPhrase =
-    next.minutesAway <= 1 ? 'is arriving now' : `is in ${next.minutesAway} minutes`;
-  let speech = `The next ${next.lineName} train at ${stationDisplayName} ${minutesPhrase}, heading to ${next.destination}.`;
+  const upcoming = arrivals.slice(0, count);
+  const arrivalPhrases = upcoming.map((arrival) => {
+    const minutesPhrase =
+      arrival.minutesAway <= 1 ? 'arriving now' : `in ${arrival.minutesAway} minutes`;
+    return `${minutesPhrase} to ${arrival.destination}`;
+  });
 
+  let speech = `At ${stationDisplayName}, the next trains are ${joinWithAnd(arrivalPhrases)}.`;
+
+  const [next] = upcoming;
   if (next.status === 'delayed' || next.status === 'alert') {
     speech += ` Note: ${next.statusDetail ?? 'this line may be delayed.'}`;
   }
 
-  if (rest.length > 0) {
-    const following = rest[0];
-    speech += ` After that, another ${following.lineName} train is in ${following.minutesAway} minutes.`;
-  }
-
   return speech;
+}
+
+/** Joins phrases with commas and a trailing "and", e.g. "a, b, and c". */
+function joinWithAnd(phrases: string[]): string {
+  if (phrases.length === 1) {
+    return phrases[0];
+  }
+  if (phrases.length === 2) {
+    return `${phrases[0]}, and ${phrases[1]}`;
+  }
+  return `${phrases.slice(0, -1).join(', ')}, and ${phrases[phrases.length - 1]}`;
 }
 
 /**
