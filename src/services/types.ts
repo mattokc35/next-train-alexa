@@ -30,6 +30,14 @@ export interface TrainArrival {
   status: TrainStatus;
   /** Optional free-text detail, e.g. a service alert headline. */
   statusDetail?: string;
+  /**
+   * Where this arrival's timing came from. Defaults to `'live'` (the
+   * real-time ridepath.json feed) when omitted. `'scheduled'` marks an
+   * arrival computed from PATH's published GTFS static timetable rather
+   * than live tracking — used to supplement the live feed, which only ever
+   * exposes ~2 upcoming arrivals per direction (see GtfsScheduleService).
+   */
+  source?: 'live' | 'scheduled';
 }
 
 /**

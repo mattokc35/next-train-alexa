@@ -1,5 +1,6 @@
 import { StationRegistry, DEFAULT_STATIONS } from '../data/stationRegistry';
 import { TransitRouter } from '../services/transitRouter';
+import type { GtfsScheduleService } from '../services/gtfsScheduleService';
 import type { ResolvedStation, TrainArrival, TransitService } from '../services/types';
 
 const groveStreetArrivals: TrainArrival[] = [
@@ -82,5 +83,97 @@ describe('TransitRouter destination filtering', () => {
     const result = await router.getNextArrivals('Grove Street', undefined, '33rd Street');
     expect(result?.arrivals).toHaveLength(1);
     expect(result?.arrivals[0].destination).toBe('33rd Street via Hoboken');
+  });
+});
+
+function buildStubScheduleService(arrivals: TrainArrival[]): GtfsScheduleService {
+  return {
+    getUpcomingScheduledArrivals: jest.fn(async () => arrivals),
+    clearCache: jest.fn(),
+  } as unknown as GtfsScheduleService;
+}
+
+describe('TransitRouter schedule supplementation', () => {
+  const registry = new StationRegistry(DEFAULT_STATIONS);
+  const scheduledArrival = (minutesAway: number): TrainArrival => ({
+    provider: 'PATH',
+    stationName: 'Grove Street',
+    lineName: 'Journal Square to 33rd Street',
+    destination: '33rd Street',
+    minutesAway,
+    status: 'on-time',
+    source: 'scheduled',
+  });
+
+  it('supplements with scheduled arrivals when a destination is filtered and live results fall short', async () => {
+    const liveArrivals: TrainArrival[] = [
+      {
+        provider: 'PATH',
+        stationName: 'Grove Street',
+        lineName: 'Journal Square to 33rd Street',
+        destination: '33rd Street',
+        minutesAway: 4,
+        status: 'on-time',
+      },
+    ];
+    const scheduleService = buildStubScheduleService([scheduledArrival(20), scheduledArrival(35)]);
+    const router = new TransitRouter(registry, buildStubService(liveArrivals), scheduleService);
+
+    const result = await router.getNextArrivals('Grove Street', undefined, '33rd Street', 3);
+
+    expect(result?.arrivals).toHaveLength(3);
+    expect(result?.arrivals.map((a) => a.minutesAway)).toEqual([4, 20, 35]);
+    expect(result?.arrivals[1].source).toBe('scheduled');
+  });
+
+  it('does not call the schedule service when live results already satisfy the requested count', async () => {
+    const liveArrivals: TrainArrival[] = [
+      {
+        provider: 'PATH',
+        stationName: 'Grove Street',
+        lineName: 'Journal Square to 33rd Street',
+        destination: '33rd Street',
+        minutesAway: 4,
+        status: 'on-time',
+      },
+    ];
+    const scheduleService = buildStubScheduleService([scheduledArrival(20)]);
+    const router = new TransitRouter(registry, buildStubService(liveArrivals), scheduleService);
+
+    const result = await router.getNextArrivals('Grove Street', undefined, '33rd Street', 1);
+
+    expect(result?.arrivals).toHaveLength(1);
+    expect(scheduleService.getUpcomingScheduledArrivals).not.toHaveBeenCalled();
+  });
+
+  it('drops a scheduled arrival that likely duplicates an already-shown live arrival', async () => {
+    const liveArrivals: TrainArrival[] = [
+      {
+        provider: 'PATH',
+        stationName: 'Grove Street',
+        lineName: 'Journal Square to 33rd Street',
+        destination: '33rd Street',
+        minutesAway: 4,
+        status: 'on-time',
+      },
+    ];
+    // Scheduled entry at 5 minutes is within the de-dupe window of the live
+    // arrival at 4 minutes — almost certainly the same physical train.
+    const scheduleService = buildStubScheduleService([scheduledArrival(5), scheduledArrival(22)]);
+    const router = new TransitRouter(registry, buildStubService(liveArrivals), scheduleService);
+
+    const result = await router.getNextArrivals('Grove Street', undefined, '33rd Street', 3);
+
+    expect(result?.arrivals.map((a) => a.minutesAway)).toEqual([4, 22]);
+  });
+
+  it('does not supplement when no destination was spoken', async () => {
+    const scheduleService = buildStubScheduleService([scheduledArrival(20)]);
+    const router = new TransitRouter(registry, buildStubService(groveStreetArrivals), scheduleService);
+
+    const result = await router.getNextArrivals('Grove Street', undefined, undefined, 5);
+
+    expect(result?.arrivals).toHaveLength(2);
+    expect(scheduleService.getUpcomingScheduledArrivals).not.toHaveBeenCalled();
   });
 });

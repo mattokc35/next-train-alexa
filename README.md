@@ -13,8 +13,10 @@ samples:
 
 ```
 Alexa → Lambda (ask-sdk-core handlers) → TransitRouter → StationRegistry
-                                              └─ PathService (official ridepath.json feed,
-                                                              scraped via headless Chromium)
+                                              ├─ PathService (official ridepath.json feed,
+                                              │                 scraped via headless Chromium)
+                                              └─ GtfsScheduleService (official static GTFS
+                                                                      timetable, as a fallback)
 ```
 
 - **Handlers** (`src/handlers/`): `LaunchRequestHandler`, `GetNextTrainIntentHandler`,
@@ -29,7 +31,8 @@ Alexa → Lambda (ask-sdk-core handlers) → TransitRouter → StationRegistry
   router or handlers. `PathService` is the only implementation today, backed
   by the official PATH `ridepath.json` feed. A `TtlCache` (30s) sits in front
   of it, since each "fetch" launches (or reuses) a real headless Chromium
-  instance — see the caveat below.
+  instance — see the caveat below. `GtfsScheduleService` supplements it with
+  PATH's official static GTFS timetable (see below).
 - **Data** (`src/data/stationRegistry.ts`): maps spoken station/line names to
   PATH's official station codes and to the destination "headsigns" that
   identify a line in the feed. Extend `DEFAULT_STATIONS` to add more PATH
@@ -56,6 +59,25 @@ ask for a specific count instead, e.g. "what are the next 2 trains at Grove
 Street" or "when are the next few 33rd Street trains coming to Grove
 Street" (capped at 5 to keep the spoken response reasonable).
 
+### Scheduled-arrival fallback (GTFS static timetable)
+
+PATH's live `ridepath.json` feed only ever exposes ~2 upcoming arrivals per
+direction per station — asking for "the next 3 trains to 33rd Street" can
+come up short on live data alone even though PATH's published timetable has
+more trips later in the window. `GtfsScheduleService`
+(`src/services/gtfsScheduleService.ts`) downloads and parses PATH's
+[official static GTFS feed](https://www.transit.land/feeds/f-dr5r-path~nj~us)
+(the same kind of published timetable Google Maps/Transit apps use), and
+`TransitRouter` uses it to fill in the remainder **only** when a caller
+names a specific destination and the live feed's filtered results fall short
+of the requested count. Scheduled entries are genuine published departure
+times (not a guess/average), are marked with `source: 'scheduled'` on the
+`TrainArrival`, and the spoken response adds a brief one-time note ("Later
+times are from the published schedule, not live tracking.") when any are
+included. The parsed schedule is cached for 24 hours — PATH republishes this
+feed roughly monthly, so there's no need to re-download/re-parse it on every
+request.
+
 ### Data source & Akamai bot-check caveat
 
 PATH does not publish a stable, documented public real-time API. This skill
@@ -80,7 +102,9 @@ behavior at any time without notice — tightening the bot-check, requiring a
 different navigation pattern, or blocking headless browsers outright. If
 `scrapeRidePathJson()` starts throwing "Failed to parse... as JSON" errors in
 production, check whether the page content changed (it likely returned a
-challenge page instead of the feed) before assuming a code bug.
+challenge page instead of the feed) before assuming a code bug. (PATH's
+static GTFS feed, used by `GtfsScheduleService` above, is a separate, plain
+HTTPS download with no such bot-check.)
 
 Launching a browser is expensive (multiple seconds), so:
 
@@ -95,7 +119,9 @@ src/
   lambda/index.ts              # Lambda entrypoint (ask-sdk-core SkillBuilder)
   handlers/                    # Intent + lifecycle handlers
   services/                    # TransitService interface, PathService,
-                                # TransitRouter, TtlCache, response formatting
+                                # GtfsScheduleService + gtfsParser (static
+                                # timetable fallback), TransitRouter,
+                                # TtlCache, response formatting
   data/stationRegistry.ts      # Station/line directory + fuzzy name matching
   __tests__/                   # Jest unit tests
 skill-package/

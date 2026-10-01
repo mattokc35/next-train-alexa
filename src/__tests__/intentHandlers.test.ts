@@ -99,7 +99,7 @@ describe('GetNextTrainIntentHandler', () => {
 
     const response = (await handler.handle(handlerInput)) as unknown as { outputSpeech: string };
 
-    expect(router.getNextArrivals).toHaveBeenCalledWith('Grove Street', undefined, null);
+    expect(router.getNextArrivals).toHaveBeenCalledWith('Grove Street', undefined, null, 3);
     expect(response.outputSpeech).toContain('World Trade Center');
     expect(response.outputSpeech).toContain('4 minutes');
   });
@@ -118,7 +118,7 @@ describe('GetNextTrainIntentHandler', () => {
 
     await handler.handle(handlerInput);
 
-    expect(router.getNextArrivals).toHaveBeenCalledWith('Grove Street', null, '33rd Street');
+    expect(router.getNextArrivals).toHaveBeenCalledWith('Grove Street', null, '33rd Street', 3);
   });
 
   it('gives a friendly error when the station cannot be resolved', async () => {
@@ -160,7 +160,7 @@ describe('GetNextTrainIntentHandler', () => {
 
     await handler.handle(handlerInput);
 
-    expect(router.getNextArrivals).toHaveBeenCalledWith('Grove Street', null, null);
+    expect(router.getNextArrivals).toHaveBeenCalledWith('Grove Street', null, null, 3);
   });
 
   it('prefers a spoken STATION slot over the saved home base station', async () => {
@@ -178,7 +178,7 @@ describe('GetNextTrainIntentHandler', () => {
 
     await handler.handle(handlerInput);
 
-    expect(router.getNextArrivals).toHaveBeenCalledWith('33rd Street', null, null);
+    expect(router.getNextArrivals).toHaveBeenCalledWith('33rd Street', null, null, 3);
   });
 
   it('gives a friendly error mentioning home base when no station is known', async () => {
@@ -212,6 +212,33 @@ describe('GetNextTrainIntentHandler', () => {
     const response = (await handler.handle(handlerInput)) as unknown as { outputSpeech: string };
 
     expect(response.outputSpeech).toContain('20 minutes');
+  });
+
+  it('combines home-base fallback, a DESTINATION slot, and a COUNT slot (e.g. "when are the next few 33rd Street trains coming")', async () => {
+    const arrivals: TrainArrival[] = [
+      { ...mockArrival, minutesAway: 3, destination: '33rd Street via Hoboken' },
+      { ...mockArrival, minutesAway: 19, destination: 'Newark' },
+      { ...mockArrival, minutesAway: 25, destination: '33rd Street via Hoboken' },
+    ];
+    const router = {
+      getNextArrivals: jest.fn().mockResolvedValue({
+        station: mockStation,
+        arrivals: arrivals.filter((a) => a.destination.startsWith('33rd Street')),
+      }),
+    } as unknown as TransitRouter;
+    const handler = createGetNextTrainIntentHandler(router);
+    const handlerInput = buildHandlerInput(
+      'GetNextTrainIntent',
+      { DESTINATION: '33rd Street', COUNT: '3' },
+      { homeStationDisplayName: 'Grove Street' },
+    );
+
+    const response = (await handler.handle(handlerInput)) as unknown as { outputSpeech: string };
+
+    expect(router.getNextArrivals).toHaveBeenCalledWith('Grove Street', null, '33rd Street', 3);
+    expect(response.outputSpeech).toContain('3 minutes');
+    expect(response.outputSpeech).toContain('25 minutes');
+    expect(response.outputSpeech).not.toContain('Newark');
   });
 
   it('clamps an out-of-range COUNT slot to the maximum allowed', async () => {

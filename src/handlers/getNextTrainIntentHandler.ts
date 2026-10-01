@@ -55,7 +55,13 @@ export function createGetNextTrainIntentHandler(router: TransitRouter): RequestH
         const effectiveStationSlot =
           stationSlot ?? (await getHomeStationDisplayName(handlerInput.attributesManager));
 
-        const result = await router.getNextArrivals(effectiveStationSlot, lineSlot, destinationSlot);
+        const arrivalCount = parseArrivalCount(countSlot);
+        const result = await router.getNextArrivals(
+          effectiveStationSlot,
+          lineSlot,
+          destinationSlot,
+          arrivalCount,
+        );
         if (!result) {
           const speakOutput = stationSlot
             ? `Sorry, I don't recognize the station "${stationSlot}". Try asking about Grove Street or 33rd Street.`
@@ -66,7 +72,6 @@ export function createGetNextTrainIntentHandler(router: TransitRouter): RequestH
             .getResponse();
         }
 
-        const arrivalCount = parseArrivalCount(countSlot);
         const speakOutput = formatNextTrainSpeech(
           result.station.displayName,
           result.arrivals,

@@ -2,6 +2,7 @@ import * as Alexa from 'ask-sdk-core';
 import { DynamoDbPersistenceAdapter } from 'ask-sdk-dynamodb-persistence-adapter';
 import { StationRegistry, DEFAULT_STATIONS } from '../data/stationRegistry';
 import { PathService } from '../services/pathService';
+import { GtfsScheduleService } from '../services/gtfsScheduleService';
 import { TransitRouter } from '../services/transitRouter';
 import { LaunchRequestHandler } from '../handlers/launchRequestHandler';
 import { createGetNextTrainIntentHandler } from '../handlers/getNextTrainIntentHandler';
@@ -17,7 +18,12 @@ import { GenericErrorHandler } from '../handlers/errorHandler';
 
 const registry = new StationRegistry(DEFAULT_STATIONS);
 const pathService = new PathService();
-const router = new TransitRouter(registry, pathService);
+// Supplements the live feed (which only ever exposes ~2 upcoming arrivals
+// per direction) with PATH's official published timetable when a caller
+// asks for more arrivals toward a specific destination than are currently
+// live — see GtfsScheduleService for details.
+const scheduleService = new GtfsScheduleService();
+const router = new TransitRouter(registry, pathService, scheduleService);
 
 // Persists each user's "home base" station (see SetHomeStationIntent) in the
 // DynamoDB table provisioned by infra/lib/next-train-stack.ts, keyed by

@@ -27,6 +27,10 @@ export function formatNextTrainSpeech(
     speech += ` Note: ${next.statusDetail ?? 'this line may be delayed.'}`;
   }
 
+  if (upcoming.some((arrival) => arrival.source === 'scheduled')) {
+    speech += ' Later times are from the published schedule, not live tracking.';
+  }
+
   return speech;
 }
 

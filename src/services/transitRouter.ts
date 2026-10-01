@@ -1,6 +1,14 @@
 import { StationRegistry, normalize } from '../data/stationRegistry';
 import type { StationDefinition } from '../data/stationRegistry';
+import type { GtfsScheduleService } from './gtfsScheduleService';
 import type { ResolvedStation, TrainArrival, TransitService } from './types';
+
+// When supplementing live results with scheduled ones, skip any scheduled
+// departure within this many minutes of an already-shown live arrival —
+// PATH's live feed and its own published timetable both describe the same
+// physical trains, so without this a train already reported by the live
+// feed could also show up a second time as a "scheduled" duplicate.
+const SCHEDULED_DEDUPE_WINDOW_MINUTES = 3;
 
 /**
  * Resolves spoken station/line slot values to a ResolvedStation and
@@ -13,6 +21,7 @@ export class TransitRouter {
   constructor(
     private readonly registry: StationRegistry,
     private readonly service: TransitService,
+    private readonly scheduleService?: GtfsScheduleService,
   ) {}
 
   /**
@@ -75,13 +84,55 @@ export class TransitRouter {
     stationSlotValue: string | undefined,
     lineSlotValue: string | undefined,
     destinationSlotValue?: string,
+    desiredCount = 3,
   ): Promise<{ station: StationDefinition; arrivals: TrainArrival[] } | undefined> {
     const match = this.resolve(stationSlotValue, lineSlotValue);
     if (!match) {
       return undefined;
     }
     const arrivals = await match.service.getNextArrivals(match.resolved);
-    return { station: match.station, arrivals: this.filterByDestination(arrivals, destinationSlotValue) };
+    const filtered = this.filterByDestination(arrivals, destinationSlotValue);
+
+    if (this.scheduleService && destinationSlotValue && filtered.length < desiredCount) {
+      const destinationStation = this.registry.findStation(destinationSlotValue);
+      const destinationDisplayName = destinationStation?.displayName ?? destinationSlotValue;
+      const scheduled = await this.scheduleService.getUpcomingScheduledArrivals(
+        match.resolved,
+        destinationDisplayName,
+        desiredCount - filtered.length + SCHEDULED_DEDUPE_WINDOW_MINUTES, // fetch extra to absorb de-dup
+      );
+      return {
+        station: match.station,
+        arrivals: this.mergeWithScheduled(filtered, scheduled, desiredCount),
+      };
+    }
+
+    return { station: match.station, arrivals: filtered };
+  }
+
+  /**
+   * Combines live arrivals with schedule-derived ones computed from PATH's
+   * official GTFS timetable, dropping any scheduled departure that likely
+   * duplicates a live arrival already in the list (see
+   * SCHEDULED_DEDUPE_WINDOW_MINUTES), then sorts and truncates to the
+   * requested count.
+   */
+  private mergeWithScheduled(
+    live: TrainArrival[],
+    scheduled: TrainArrival[],
+    desiredCount: number,
+  ): TrainArrival[] {
+    const deduped = scheduled.filter(
+      (candidate) =>
+        !live.some(
+          (existing) =>
+            Math.abs(existing.minutesAway - candidate.minutesAway) <=
+            SCHEDULED_DEDUPE_WINDOW_MINUTES,
+        ),
+    );
+    return [...live, ...deduped]
+      .sort((a, b) => a.minutesAway - b.minutesAway)
+      .slice(0, desiredCount);
   }
 
   async getDelayStatus(
